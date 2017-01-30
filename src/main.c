@@ -19,7 +19,7 @@ FILE *_open(const char *name) {
   return f;
 }
 
-int write_structs_decl(FILE *f, int ac, char *av[]) {
+int write_structs_decl(FILE *fh, FILE *fc, int ac, char *av[]) {
   const char *fmt =
     "typedef struct %s_value {\n"
     "  %s value;\n"
@@ -32,11 +32,15 @@ int write_structs_decl(FILE *f, int ac, char *av[]) {
     "  unsigned int len;\n"
     "} %s_list;\n"
     "\n"
-    "static const %s_list *_%s_list;\n\n";
+    "extern const %s_list *_%s_list;\n\n";
   int err = 0;
   for (int i = 1; i != ac; i += 1) {
-    err |= fprintf(f, fmt, av[i], av[i], av[i], av[i], av[i], av[i], av[i], av[i], av[i], av[i]);
+    err |= fprintf(fh, fmt, av[i], av[i], av[i], av[i], av[i], av[i], av[i], av[i], av[i], av[i]);
   }
+  for (int i = 1; i != ac; i += 1) {
+    err |= fprintf(fc, "const %s_list *_%s_list = 0;\n", av[i], av[i]);
+  }
+  err |= fprintf(fc, "\n");
   return err;
 }
 
@@ -392,6 +396,94 @@ int write_foreach(FILE *fh, FILE *fc, int ac, char *av[]) {
   return _write_foreach_decl(fh, ac, av) | _write_foreach_def(fc, ac, av);
 }
 
+int _write_any_decl(FILE *f, int ac, char *av[]) {
+  int err = 0;
+  err |= fprintf(f, "#define any(lst, f) _Generic((lst)");
+  // write the macro first
+  for (int i = 1; i != ac; i += 1) {
+    err |= fprintf(f, ", \\\n  %s_list*: %s_list_any", av[i], av[i]);
+  }
+  err |= fprintf(f, ")(lst, f)\n\n");
+  // then func declarations
+  for (int i = 1; i != ac; i += 1) {
+    err |= fprintf(f, "bool %s_list_any(%s_list *, bool (*)(const %s*));\n",
+                   av[i], av[i], av[i]);
+  }
+  err |= fprintf(f, "\n");
+
+  return err;
+}
+
+int _write_any_def(FILE *f, int ac, char *av[]) {
+    const char *fmt =
+      "bool %s_list_any(%s_list *lst, bool (*f)(const %s*)) {\n"
+      "  if (lst) {\n"
+      "    %s_value *_first = lst->first;\n"
+      "    bool r = false;\n"
+      "    for (; _first; _first = _first->next) {\n"
+      "      r |= f(&_first->value);\n"
+      "    }\n"
+      "    return r;\n"
+      "  }\n"
+      "  return false;\n"
+      "}\n\n";
+
+  int err = 0;
+  for (int i = 1; i != ac; i +=1) {
+    err |= fprintf(f, fmt, av[i], av[i], av[i], av[i]);
+  }
+
+  return err;
+}
+
+int write_any(FILE *fh, FILE *fc, int ac, char *av[]) {
+  return _write_any_decl(fh, ac, av) | _write_any_def(fc, ac, av);
+}
+
+int _write_all_decl(FILE *f, int ac, char *av[]) {
+  int err = 0;
+  err |= fprintf(f, "#define all(lst, f) _Generic((lst)");
+  // write the macro first
+  for (int i = 1; i != ac; i += 1) {
+    err |= fprintf(f, ", \\\n  %s_list*: %s_list_all", av[i], av[i]);
+  }
+  err |= fprintf(f, ")(lst, f)\n\n");
+  // then func declarations
+  for (int i = 1; i != ac; i += 1) {
+    err |= fprintf(f, "bool %s_list_all(%s_list *, bool (*)(const %s*));\n",
+                   av[i], av[i], av[i]);
+  }
+  err |= fprintf(f, "\n");
+
+  return err;
+}
+
+int _write_all_def(FILE *f, int ac, char *av[]) {
+    const char *fmt =
+      "bool %s_list_all(%s_list *lst, bool (*f)(const %s*)) {\n"
+      "  if (lst) {\n"
+      "    %s_value *_first = lst->first;\n"
+      "    bool r = true;\n"
+      "    for (; _first; _first = _first->next) {\n"
+      "      r &= f(&_first->value);\n"
+      "    }\n"
+      "    return r;\n"
+      "  }\n"
+      "  return false;\n"
+      "}\n\n";
+
+  int err = 0;
+  for (int i = 1; i != ac; i +=1) {
+    err |= fprintf(f, fmt, av[i], av[i], av[i], av[i]);
+  }
+
+  return err;
+}
+
+int write_all(FILE *fh, FILE *fc, int ac, char *av[]) {
+  return _write_all_decl(fh, ac, av) | _write_all_def(fc, ac, av);
+}
+
 int write_includes(FILE *fh, FILE *fc) {
   const char *fmtc =
     "#include \"kiwi.h\"\n"
@@ -414,15 +506,21 @@ int do_stuff(int ac, char *av[]) {
   fprintf(fh, "/* this is a generated file, do not edit. */\n\n");
   fprintf(fc, "/* this is a generated file, do not edit. */\n\n");
 
+  // include guards
+  fprintf(fh, "#ifndef KIWI_H\n#define KIWI_H\n\n");
   write_includes(fh, fc);
-  write_structs_decl(fh, ac, av);
+  write_structs_decl(fh, fc, ac, av);
   write_make(fh, fc, ac, av);
-  write_append(fh, fc, ac, av);
   write_drop(fh, fc, ac, av);
+  write_append(fh, fc, ac, av);
   write_copy(fh, fc, ac, av);
   write_map(fh, fc, ac, av);
   write_mapi(fh, fc, ac, av);
   write_foreach(fh, fc, ac, av);
+  write_any(fh, fc, ac, av);
+  write_all(fh, fc, ac, av);
+  // endif include guards
+  fprintf(fh, "#endif // KIWI_H\n");
 
   return 0;
 }
