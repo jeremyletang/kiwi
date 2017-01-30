@@ -196,13 +196,13 @@ int _write_copy_def(FILE *f, int ac, char *av[]) {
       "  for (; _first; _first = _first->next) {\n"
       "    n = malloc(sizeof(%s_value));\n"
       "    n->value = _first->value;\n"
+      "    n->next = 0;\n"
       "    if (lst->first == _first) {\n"
       "      _new->first = n;\n"
-      "      current = n;\n"
       "    } else {\n"
       "      current->next = n;\n"
-      "      current = n;\n"
       "    }\n"
+      "    current = n;\n"
       "  }\n"
       "  _new->last = n;\n"
       "  _new->len = lst->len;\n"
@@ -219,6 +219,177 @@ int _write_copy_def(FILE *f, int ac, char *av[]) {
 
 int write_copy(FILE *fh, FILE *fc, int ac, char *av[]) {
   return _write_copy_decl(fh, ac, av) | _write_copy_def(fc, ac, av);
+}
+
+int _write_map_decl(FILE *f, int ac, char *av[]) {
+  int err = 0;
+  err |= fprintf(f, "#define map(lst, f) _Generic((f)");
+  // write the macro first
+  for (int i = 1; i != ac; i += 1) {
+    for (int j = 1; j != ac; j += 1) {
+      err |= fprintf(f, ", \\\n  %s (*)(const %s*): %s_list_map_%s", av[j], av[i], av[i], av[j]);
+    }
+  }
+  err |= fprintf(f, ")(lst, f)\n\n");
+  const char *fmt = "%s_list *%s_list_map_%s(%s_list *, %s (*)(const %s*));\n";
+  // then func declarations
+  for (int i = 1; i != ac; i += 1) {
+    for (int j = 1; j != ac; j += 1) {
+      err |= fprintf(f, fmt, av[j], av[i], av[j], av[i], av[j], av[i]);
+    }
+  }
+  err |= fprintf(f, "\n");
+
+  return err;
+}
+
+int _write_map_def(FILE *f, int ac, char *av[]) {
+    const char *fmt =
+      "%s_list *%s_list_map_%s(%s_list *lst, %s (*f)(const %s*)) {\n"
+      "  if (!lst) { return 0; }\n"
+      "  %s_list *_new = make(_%s_list);\n"
+      "  if (!_new) { return 0; }\n"
+      "  %s_value *_first = lst->first;\n"
+      "  %s_value *n = 0, *current = 0;\n"
+      "  for (; _first; _first = _first->next) {\n"
+      "    n = malloc(sizeof(%s_value));\n"
+      "    n->value = f(&_first->value);\n"
+      "    n->next = 0;\n"
+      "    if (lst->first == _first) {\n"
+      "      _new->first = n;\n"
+      "    } else {\n"
+      "      current->next = n;\n"
+      "    }\n"
+      "    current = n;\n"
+      "  }\n"
+      "  _new->last = n;\n"
+      "  _new->len = lst->len;\n"
+      "  return _new;\n"
+      "}\n\n";
+
+  int err = 0;
+  for (int i = 1; i != ac; i +=1) {
+    for (int j = 1; j != ac; j += 1) {
+      err |= fprintf(f, fmt, av[j], av[i], av[j], av[i], av[j], av[i],
+                     av[j], av[j],
+                     av[i], av[j],
+                     av[j]);
+    }
+  }
+
+  return err;
+}
+
+int write_map(FILE *fh, FILE *fc, int ac, char *av[]) {
+  return _write_map_decl(fh, ac, av) | _write_map_def(fc, ac, av);
+}
+
+int _write_mapi_decl(FILE *f, int ac, char *av[]) {
+  int err = 0;
+  err |= fprintf(f, "#define mapi(lst, f) _Generic((f)");
+  // write the macro first
+  for (int i = 1; i != ac; i += 1) {
+    for (int j = 1; j != ac; j += 1) {
+      err |= fprintf(f, ", \\\n  %s (*)(unsigned int, const %s*): %s_list_mapi_%s",
+                     av[j], av[i], av[i], av[j]);
+    }
+  }
+  err |= fprintf(f, ")(lst, f)\n\n");
+  const char *fmt = "%s_list *%s_list_mapi_%s(%s_list *, %s (*)(unsigned int, const %s*));\n";
+  // then func declarations
+  for (int i = 1; i != ac; i += 1) {
+    for (int j = 1; j != ac; j += 1) {
+      err |= fprintf(f, fmt, av[j], av[i], av[j], av[i], av[j], av[i]);
+    }
+  }
+  err |= fprintf(f, "\n");
+
+  return err;
+}
+
+int _write_mapi_def(FILE *f, int ac, char *av[]) {
+    const char *fmt =
+      "%s_list *%s_list_mapi_%s(%s_list *lst, %s (*f)(unsigned int, const %s*)) {\n"
+      "  if (!lst) { return 0; }\n"
+      "  %s_list *_new = make(_%s_list);\n"
+      "  if (!_new) { return 0; }\n"
+      "  %s_value *_first = lst->first;\n"
+      "  %s_value *n = 0, *current = 0;\n"
+      "  unsigned int i = 0;\n"
+      "  for (; _first; _first = _first->next) {\n"
+      "    n = malloc(sizeof(%s_value));\n"
+      "    n->value = f(i, &_first->value);\n"
+      "    i += 1;\n"
+      "    n->next = 0;\n"
+      "    if (lst->first == _first) {\n"
+      "      _new->first = n;\n"
+      "    } else {\n"
+      "      current->next = n;\n"
+      "    }\n"
+      "    current = n;\n"
+      "  }\n"
+      "  _new->last = n;\n"
+      "  _new->len = lst->len;\n"
+      "  return _new;\n"
+      "}\n\n";
+
+  int err = 0;
+  for (int i = 1; i != ac; i +=1) {
+    for (int j = 1; j != ac; j += 1) {
+      err |= fprintf(f, fmt, av[j], av[i], av[j], av[i], av[j], av[i],
+                     av[j], av[j],
+                     av[i], av[j],
+                     av[j]);
+    }
+  }
+
+  return err;
+}
+
+int write_mapi(FILE *fh, FILE *fc, int ac, char *av[]) {
+  return _write_mapi_decl(fh, ac, av) | _write_mapi_def(fc, ac, av);
+}
+
+
+int _write_foreach_decl(FILE *f, int ac, char *av[]) {
+  int err = 0;
+  err |= fprintf(f, "#define foreach(lst, f) _Generic((lst)");
+  // write the macro first
+  for (int i = 1; i != ac; i += 1) {
+    err |= fprintf(f, ", \\\n  %s_list*: %s_list_foreach", av[i], av[i]);
+  }
+  err |= fprintf(f, ")(lst, f)\n\n");
+  // then func declarations
+  for (int i = 1; i != ac; i += 1) {
+    err |= fprintf(f, "void %s_list_foreach(%s_list *, void (*)(const %s*));\n",
+                   av[i], av[i], av[i]);
+  }
+  err |= fprintf(f, "\n");
+
+  return err;
+}
+
+int _write_foreach_def(FILE *f, int ac, char *av[]) {
+    const char *fmt =
+      "void %s_list_foreach(%s_list *lst, void (*f)(const %s*)) {\n"
+      "  if (lst) {\n"
+      "    %s_value *_first = lst->first;\n"
+      "    for (; _first; _first = _first->next) {\n"
+      "      f(&_first->value);\n"
+      "    }\n"
+      "  }\n"
+      "}\n\n";
+
+  int err = 0;
+  for (int i = 1; i != ac; i +=1) {
+    err |= fprintf(f, fmt, av[i], av[i], av[i], av[i]);
+  }
+
+  return err;
+}
+
+int write_foreach(FILE *fh, FILE *fc, int ac, char *av[]) {
+  return _write_foreach_decl(fh, ac, av) | _write_foreach_def(fc, ac, av);
 }
 
 int write_includes(FILE *fh, FILE *fc) {
@@ -249,6 +420,9 @@ int do_stuff(int ac, char *av[]) {
   write_append(fh, fc, ac, av);
   write_drop(fh, fc, ac, av);
   write_copy(fh, fc, ac, av);
+  write_map(fh, fc, ac, av);
+  write_mapi(fh, fc, ac, av);
+  write_foreach(fh, fc, ac, av);
 
   return 0;
 }
