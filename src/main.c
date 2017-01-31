@@ -676,16 +676,26 @@ int write_filter(FILE *fh, FILE *fc, int ac, char *av[]) {
   return _write_filter_decl(fh, ac, av) | _write_filter_def(fc, ac, av);
 }
 
-int write_includes(FILE *fh, FILE *fc) {
+int write_includes(FILE *fh, FILE *fc, parsed_opts *opts) {
   const char *fmtc =
     "#include \"kiwi.h\"\n"
     "#include <stdlib.h>\n"
     "#include <stdio.h>\n\n";
   const char *fmth =
     "#include <stdbool.h>\n"
-    "#include <stdint.h>\n\n";
+    "#include <stdint.h>\n";
+  int err = fprintf(fh, "%s", fmth) | fprintf(fc, "%s", fmtc);
 
-  return fprintf(fh, "%s", fmth) | fprintf(fc, "%s", fmtc);
+  if (has_opt(opts, "-I")) {
+    fprintf(fh, "\n// user defined types headers\n");
+    opt_list *o = opts->opts;
+    for (; o; o = o->next) {
+      err |= fprintf(fh, "#include <%s>\n", o->opt->arg);
+    }
+  }
+  fprintf(fh, "\n");
+
+  return err;
 }
 
 int do_stuff(parsed_opts *opts) {
@@ -703,7 +713,7 @@ int do_stuff(parsed_opts *opts) {
 
   // include guards
   fprintf(fh, "#ifndef KIWI_H\n#define KIWI_H\n\n");
-  write_includes(fh, fc);
+  write_includes(fh, fc, opts);
   write_structs_decl(fh, fc, ac, av);
   write_make(fh, fc, ac, av);
   write_drop(fh, fc, ac, av);
