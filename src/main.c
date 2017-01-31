@@ -196,19 +196,10 @@ int _write_copy_def(FILE *f, int ac, char *av[]) {
       "  if (!lst) { return 0; }\n"
       "  %s_list *_new = make(_%s_list);\n"
       "  if (!_new) { return 0; }\n"
-      "  %s_value *_first = lst->first, *n = 0, *current = 0;\n"
+      "  %s_value *_first = lst->first;\n"
       "  for (; _first; _first = _first->next) {\n"
-      "    n = malloc(sizeof(%s_value));\n"
-      "    n->value = _first->value;\n"
-      "    n->next = 0;\n"
-      "    if (lst->first == _first) {\n"
-      "      _new->first = n;\n"
-      "    } else {\n"
-      "      current->next = n;\n"
-      "    }\n"
-      "    current = n;\n"
+      "    append(_new, _first->value);\n"
       "  }\n"
-      "  _new->last = n;\n"
       "  _new->len = lst->len;\n"
       "  return _new;\n"
       "}\n\n";
@@ -254,19 +245,9 @@ int _write_map_def(FILE *f, int ac, char *av[]) {
       "  %s_list *_new = make(_%s_list);\n"
       "  if (!_new) { return 0; }\n"
       "  %s_value *_first = lst->first;\n"
-      "  %s_value *n = 0, *current = 0;\n"
       "  for (; _first; _first = _first->next) {\n"
-      "    n = malloc(sizeof(%s_value));\n"
-      "    n->value = f(&_first->value);\n"
-      "    n->next = 0;\n"
-      "    if (lst->first == _first) {\n"
-      "      _new->first = n;\n"
-      "    } else {\n"
-      "      current->next = n;\n"
-      "    }\n"
-      "    current = n;\n"
+      "    append(_new, f(&_first->value));\n"
       "  }\n"
-      "  _new->last = n;\n"
       "  _new->len = lst->len;\n"
       "  return _new;\n"
       "}\n\n";
@@ -318,21 +299,11 @@ int _write_mapi_def(FILE *f, int ac, char *av[]) {
       "  %s_list *_new = make(_%s_list);\n"
       "  if (!_new) { return 0; }\n"
       "  %s_value *_first = lst->first;\n"
-      "  %s_value *n = 0, *current = 0;\n"
       "  unsigned int i = 0;\n"
       "  for (; _first; _first = _first->next) {\n"
-      "    n = malloc(sizeof(%s_value));\n"
-      "    n->value = f(i, &_first->value);\n"
+      "    append(_new, f(i, &_first->value));\n"
       "    i += 1;\n"
-      "    n->next = 0;\n"
-      "    if (lst->first == _first) {\n"
-      "      _new->first = n;\n"
-      "    } else {\n"
-      "      current->next = n;\n"
-      "    }\n"
-      "    current = n;\n"
       "  }\n"
-      "  _new->last = n;\n"
       "  _new->len = lst->len;\n"
       "  return _new;\n"
       "}\n\n";
@@ -622,6 +593,52 @@ int write_find(FILE *fh, FILE *fc, int ac, char *av[]) {
   return _write_find_decl(fh, ac, av) | _write_find_def(fc, ac, av);
 }
 
+int _write_filter_decl(FILE *f, int ac, char *av[]) {
+  int err = 0;
+  err |= fprintf(f, "#define filter(lst) _Generic((lst)");
+  // write the macro first
+  for (int i = 1; i != ac; i += 1) {
+    err |= fprintf(f, ", \\\n  %s_list*: %s_list_filter", av[i], av[i]);
+  }
+  err |= fprintf(f, ")(lst)\n\n");
+  // then func declarations
+  for (int i = 1; i != ac; i += 1) {
+    err |= fprintf(f, "%s_list *%s_list_filter(%s_list *, bool (*)(const %s*));\n",
+                   av[i], av[i], av[i], av[i]);
+  }
+  err |= fprintf(f, "\n");
+
+  return err;
+}
+
+int _write_filter_def(FILE *f, int ac, char *av[]) {
+    const char *fmt =
+      "%s_list *%s_list_filter(%s_list *lst, bool (*f)(const %s*)) {\n"
+      "  if (!lst) { return 0; }\n"
+      "  %s_list *_new = make(_%s_list);\n"
+      "  if (!_new) { return 0; }\n"
+      "  %s_value *_first = lst->first;\n"
+      "  for (; _first; _first = _first->next) {\n"
+      "    if (f(&_first->value) == true) {\n"
+      "      append(_new, _first->value);\n"
+      "    }\n"
+      "  }\n"
+      "  _new->len = lst->len;\n"
+      "  return _new;\n"
+      "}\n\n";
+
+  int err = 0;
+  for (int i = 1; i != ac; i +=1) {
+    err |= fprintf(f, fmt, av[i], av[i], av[i], av[i], av[i], av[i], av[i]);
+  }
+
+  return err;
+}
+
+int write_filter(FILE *fh, FILE *fc, int ac, char *av[]) {
+  return _write_filter_decl(fh, ac, av) | _write_filter_def(fc, ac, av);
+}
+
 int write_includes(FILE *fh, FILE *fc) {
   const char *fmtc =
     "#include \"kiwi.h\"\n"
@@ -661,6 +678,7 @@ int do_stuff(int ac, char *av[]) {
   write_all(fh, fc, ac, av);
   write_rev(fh, fc, ac, av);
   write_find(fh, fc, ac, av);
+  write_filter(fh, fc, ac, av);
   // endif include guards
   fprintf(fh, "#endif // KIWI_H\n");
 
