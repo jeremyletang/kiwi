@@ -628,7 +628,8 @@ int write_includes(FILE *fh, FILE *fc) {
     "#include <stdlib.h>\n"
     "#include <stdio.h>\n\n";
   const char *fmth =
-    "#include <stdbool.h>\n\n";
+    "#include <stdbool.h>\n"
+    "#include <stdint.h>\n\n";
 
   return fprintf(fh, "%s", fmth) | fprintf(fc, "%s", fmtc);
 }
