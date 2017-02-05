@@ -57,7 +57,31 @@ FILE *_open(const char *out, const char *name) {
   return f;
 }
 
-int write_structs_decl(FILE *fh, FILE *fc, int ac, char *av[]) {
+typedef struct split_ty {
+  char *ty;
+  char *alias;
+  int sep;
+} split_ty;
+
+split_ty split_ty_make(char *s) {
+  split_ty st = {.ty = s, .alias = s, .sep = -1};
+  char *result = s;
+  if ((result = strchr(result, ':')) != 0) {
+    st.ty = (result + 1);
+    *result = '\0';
+    st.sep = (result - s);
+  }
+
+  return st;
+}
+
+void split_ty_reset(split_ty s) {
+  if (s.sep != -1) {
+    s.alias[s.sep] = ':';
+  }
+}
+
+int write_structs_decl(FILE *fh, FILE *fc, int ac, split_ty *sts) {
   const char *fmt =
     "typedef struct %s_value {\n"
     "  %s value;\n"
@@ -73,33 +97,39 @@ int write_structs_decl(FILE *fh, FILE *fc, int ac, char *av[]) {
     "extern const %s_list *_%s_list;\n\n";
   int err = 0;
   for (int i = 0; i != ac; i += 1) {
-    err |= fprintf(fh, fmt, av[i], av[i], av[i], av[i], av[i], av[i], av[i], av[i], av[i], av[i]);
-  }
-  for (int i = 0; i != ac; i += 1) {
-    err |= fprintf(fc, "const %s_list *_%s_list = 0;\n", av[i], av[i]);
+    //split_ty s = split_ty_make(av[i]);
+    // header
+    split_ty s = sts[i];
+    err |= fprintf(fh, fmt, s.alias, s.ty, s.alias, s.alias, s.alias, s.alias, s.alias,
+                   s.alias, s.alias, s.alias);
+    // c
+    err |= fprintf(fc, "const %s_list *_%s_list = 0;\n", s.alias, s.alias);
+    /// split_ty_reset(s);
   }
   err |= fprintf(fc, "\n");
   return err;
 }
 
-int _write_make_decl(FILE *f, int ac, char *av[]) {
+int _write_make_decl(FILE *f, int ac, split_ty *sts) {
   int err = 0;
   err |= fprintf(f, "#define make(lst) _Generic((lst)");
   // write the macro first
   for (int i = 0; i != ac; i += 1) {
-    err |= fprintf(f, ", \\\n  const %s_list*: %s_list_make", av[i], av[i]);
+    split_ty s = sts[i];
+    err |= fprintf(f, ", \\\n  const %s_list*: %s_list_make", s.alias, s.alias);
   }
   err |= fprintf(f, ")()\n\n");
   // then func declarations
   for (int i = 0; i != ac; i += 1) {
-    err |= fprintf(f, "%s_list *%s_list_make();\n", av[i], av[i]);
+    split_ty s = sts[i];
+    err |= fprintf(f, "%s_list *%s_list_make();\n", s.alias, s.alias);
   }
   err |= fprintf(f, "\n");
 
   return err;
 }
 
-int _write_make_def(FILE *f, int ac, char *av[]) {
+int _write_make_def(FILE *f, int ac, split_ty *sts) {
   const char *fmt =
     "%s_list *%s_list_make() {\n"
     "  %s_list *lst = malloc(sizeof(%s_list));\n"
@@ -113,34 +143,35 @@ int _write_make_def(FILE *f, int ac, char *av[]) {
 
   int err = 0;
   for (int i = 0; i != ac; i +=1) {
-    err |= fprintf(f, fmt, av[i], av[i], av[i], av[i]);
+    err |= fprintf(f, fmt, sts[i].alias, sts[i].alias, sts[i].alias, sts[i].alias);
   }
 
   return err;
 }
 
-int write_make(FILE *fh, FILE *fc, int ac, char *av[]) {
-  return _write_make_decl(fh, ac, av) | _write_make_def(fc, ac, av);
+int write_make(FILE *fh, FILE *fc, int ac, split_ty *sts) {
+  return _write_make_decl(fh, ac, sts) | _write_make_def(fc, ac, sts);
 }
 
-int _write_append_decl(FILE *f, int ac, char *av[]) {
+int _write_append_decl(FILE *f, int ac, split_ty *sts) {
   int err = 0;
   err |= fprintf(f, "#define append(lst, v) _Generic((lst)");
   // write the macro first
   for (int i = 0; i != ac; i += 1) {
-    err |= fprintf(f, ", \\\n  %s_list*: %s_list_append", av[i], av[i]);
+    err |= fprintf(f, ", \\\n  %s_list*: %s_list_append", sts[i].alias, sts[i].alias);
   }
   err |= fprintf(f, ")(lst, v)\n\n");
   // then func declarations
   for (int i = 0; i != ac; i += 1) {
-    err |= fprintf(f, "%s_list *%s_list_append(%s_list *, %s);\n", av[i], av[i], av[i], av[i]);
+    err |= fprintf(f, "%s_list *%s_list_append(%s_list *, %s);\n",
+                   sts[i].alias, sts[i].alias, sts[i].alias, sts[i].ty);
   }
   err |= fprintf(f, "\n");
 
   return err;
 }
 
-int _write_append_def(FILE *f, int ac, char *av[]) {
+int _write_append_def(FILE *f, int ac, split_ty *sts) {
     const char *fmt =
       "%s_list *%s_list_append(%s_list *lst, %s v) {\n"
       "  if (!lst) { return 0; }\n"
@@ -159,34 +190,35 @@ int _write_append_def(FILE *f, int ac, char *av[]) {
 
   int err = 0;
   for (int i = 0; i != ac; i +=1) {
-    err |= fprintf(f, fmt, av[i], av[i], av[i], av[i], av[i], av[i]);
+    err |= fprintf(f, fmt, sts[i].alias, sts[i].alias, sts[i].alias, sts[i].ty,
+                   sts[i].alias, sts[i].alias);
   }
 
   return err;
 }
 
-int write_append(FILE *fh, FILE *fc, int ac, char *av[]) {
-  return _write_append_decl(fh, ac, av) | _write_append_def(fc, ac, av);
+int write_append(FILE *fh, FILE *fc, int ac, split_ty *sts) {
+  return _write_append_decl(fh, ac, sts) | _write_append_def(fc, ac, sts);
 }
 
-int _write_drop_decl(FILE *f, int ac, char *av[]) {
+int _write_drop_decl(FILE *f, int ac, split_ty *sts) {
   int err = 0;
   err |= fprintf(f, "#define drop(lst) _Generic((lst)");
   // write the macro first
   for (int i = 0; i != ac; i += 1) {
-    err |= fprintf(f, ", \\\n  %s_list*: %s_list_drop", av[i], av[i]);
+    err |= fprintf(f, ", \\\n  %s_list*: %s_list_drop", sts[i].alias, sts[i].alias);
   }
   err |= fprintf(f, ")(lst)\n\n");
   // then func declarations
   for (int i = 0; i != ac; i += 1) {
-    err |= fprintf(f, "void %s_list_drop(%s_list *);\n", av[i], av[i]);
+    err |= fprintf(f, "void %s_list_drop(%s_list *);\n", sts[i].alias, sts[i].alias);
   }
   err |= fprintf(f, "\n");
 
   return err;
 }
 
-int _write_drop_def(FILE *f, int ac, char *av[]) {
+int _write_drop_def(FILE *f, int ac, split_ty *sts) {
     const char *fmt =
       "void %s_list_drop(%s_list *lst) {\n"
       "  if (lst) {\n"
@@ -201,34 +233,35 @@ int _write_drop_def(FILE *f, int ac, char *av[]) {
 
   int err = 0;
   for (int i = 0; i != ac; i +=1) {
-    err |= fprintf(f, fmt, av[i], av[i], av[i]);
+    err |= fprintf(f, fmt, sts[i].alias, sts[i].alias, sts[i].alias);
   }
 
   return err;
 }
 
-int write_drop(FILE *fh, FILE *fc, int ac, char *av[]) {
-  return _write_drop_decl(fh, ac, av) | _write_drop_def(fc, ac, av);
+int write_drop(FILE *fh, FILE *fc, int ac, split_ty *sts) {
+  return _write_drop_decl(fh, ac, sts) | _write_drop_def(fc, ac, sts);
 }
 
-int _write_copy_decl(FILE *f, int ac, char *av[]) {
+int _write_copy_decl(FILE *f, int ac, split_ty *sts) {
   int err = 0;
   err |= fprintf(f, "#define copy(lst) _Generic((lst)");
   // write the macro first
   for (int i = 0; i != ac; i += 1) {
-    err |= fprintf(f, ", \\\n  %s_list*: %s_list_copy", av[i], av[i]);
+    err |= fprintf(f, ", \\\n  %s_list*: %s_list_copy", sts[i].alias, sts[i].alias);
   }
   err |= fprintf(f, ")(lst)\n\n");
   // then func declarations
   for (int i = 0; i != ac; i += 1) {
-    err |= fprintf(f, "%s_list *%s_list_copy(%s_list *);\n", av[i], av[i], av[i]);
+    err |= fprintf(f, "%s_list *%s_list_copy(%s_list *);\n",
+                   sts[i].alias, sts[i].alias, sts[i].alias);
   }
   err |= fprintf(f, "\n");
 
   return err;
 }
 
-int _write_copy_def(FILE *f, int ac, char *av[]) {
+int _write_copy_def(FILE *f, int ac, split_ty *sts) {
     const char *fmt =
       "%s_list *%s_list_copy(%s_list *lst) {\n"
       "  if (!lst) { return 0; }\n"
@@ -244,23 +277,26 @@ int _write_copy_def(FILE *f, int ac, char *av[]) {
 
   int err = 0;
   for (int i = 0; i != ac; i +=1) {
-    err |= fprintf(f, fmt, av[i], av[i], av[i], av[i], av[i], av[i], av[i]);
+    err |= fprintf(f, fmt, sts[i].alias, sts[i].alias, sts[i].alias,
+                   sts[i].alias, sts[i].alias,
+                   sts[i].alias);
   }
 
   return err;
 }
 
-int write_copy(FILE *fh, FILE *fc, int ac, char *av[]) {
-  return _write_copy_decl(fh, ac, av) | _write_copy_def(fc, ac, av);
+int write_copy(FILE *fh, FILE *fc, int ac, split_ty *sts) {
+  return _write_copy_decl(fh, ac, sts) | _write_copy_def(fc, ac, sts);
 }
 
-int _write_map_decl(FILE *f, int ac, char *av[]) {
+int _write_map_decl(FILE *f, int ac, split_ty *sts) {
   int err = 0;
   err |= fprintf(f, "#define map(lst, f) _Generic((f)");
   // write the macro first
   for (int i = 0; i != ac; i += 1) {
     for (int j = 0; j != ac; j += 1) {
-      err |= fprintf(f, ", \\\n  %s (*)(const %s*): %s_list_map_%s", av[j], av[i], av[i], av[j]);
+      err |= fprintf(f, ", \\\n  %s (*)(const %s*): %s_list_map_%s",
+                     sts[j].ty, sts[i].ty, sts[i].alias, sts[j].alias);
     }
   }
   err |= fprintf(f, ")(lst, f)\n\n");
@@ -268,7 +304,8 @@ int _write_map_decl(FILE *f, int ac, char *av[]) {
   // then func declarations
   for (int i = 0; i != ac; i += 1) {
     for (int j = 0; j != ac; j += 1) {
-      err |= fprintf(f, fmt, av[j], av[i], av[j], av[i], av[j], av[i]);
+      err |= fprintf(f, fmt,
+                     sts[j].alias, sts[i].alias, sts[j].alias, sts[i].alias, sts[j].ty, sts[i].ty);
     }
   }
   err |= fprintf(f, "\n");
@@ -276,7 +313,7 @@ int _write_map_decl(FILE *f, int ac, char *av[]) {
   return err;
 }
 
-int _write_map_def(FILE *f, int ac, char *av[]) {
+int _write_map_def(FILE *f, int ac, split_ty *sts) {
     const char *fmt =
       "%s_list *%s_list_map_%s(%s_list *lst, %s (*f)(const %s*)) {\n"
       "  if (!lst) { return 0; }\n"
@@ -284,7 +321,7 @@ int _write_map_def(FILE *f, int ac, char *av[]) {
       "  if (!_new) { return 0; }\n"
       "  %s_value *_first = lst->first;\n"
       "  for (; _first; _first = _first->next) {\n"
-      "    append(_new, f(&_first->value));\n"
+      "    append(_new, f((const %s*)&_first->value));\n"
       "  }\n"
       "  _new->len = lst->len;\n"
       "  return _new;\n"
@@ -293,28 +330,28 @@ int _write_map_def(FILE *f, int ac, char *av[]) {
   int err = 0;
   for (int i = 0; i != ac; i +=1) {
     for (int j = 0; j != ac; j += 1) {
-      err |= fprintf(f, fmt, av[j], av[i], av[j], av[i], av[j], av[i],
-                     av[j], av[j],
-                     av[i], av[j],
-                     av[j]);
+      err |= fprintf(f, fmt,
+                     sts[j].alias, sts[i].alias, sts[j].alias, sts[i].alias, sts[j].ty, sts[i].ty,
+                     sts[j].alias, sts[j].alias,
+                     sts[i].alias, sts[i].ty);
     }
   }
 
   return err;
 }
 
-int write_map(FILE *fh, FILE *fc, int ac, char *av[]) {
-  return _write_map_decl(fh, ac, av) | _write_map_def(fc, ac, av);
+int write_map(FILE *fh, FILE *fc, int ac, split_ty *sts) {
+  return _write_map_decl(fh, ac, sts) | _write_map_def(fc, ac, sts);
 }
 
-int _write_mapi_decl(FILE *f, int ac, char *av[]) {
+int _write_mapi_decl(FILE *f, int ac, split_ty *sts) {
   int err = 0;
   err |= fprintf(f, "#define mapi(lst, f) _Generic((f)");
   // write the macro first
   for (int i = 0; i != ac; i += 1) {
     for (int j = 0; j != ac; j += 1) {
       err |= fprintf(f, ", \\\n  %s (*)(unsigned int, const %s*): %s_list_mapi_%s",
-                     av[j], av[i], av[i], av[j]);
+                     sts[j].ty, sts[i].ty, sts[i].alias, sts[j].alias);
     }
   }
   err |= fprintf(f, ")(lst, f)\n\n");
@@ -322,7 +359,8 @@ int _write_mapi_decl(FILE *f, int ac, char *av[]) {
   // then func declarations
   for (int i = 0; i != ac; i += 1) {
     for (int j = 0; j != ac; j += 1) {
-      err |= fprintf(f, fmt, av[j], av[i], av[j], av[i], av[j], av[i]);
+      err |= fprintf(f, fmt,
+                     sts[j].alias, sts[i].alias, sts[j].alias, sts[i].alias, sts[j].ty, sts[i].ty);
     }
   }
   err |= fprintf(f, "\n");
@@ -330,7 +368,7 @@ int _write_mapi_decl(FILE *f, int ac, char *av[]) {
   return err;
 }
 
-int _write_mapi_def(FILE *f, int ac, char *av[]) {
+int _write_mapi_def(FILE *f, int ac, split_ty *sts) {
     const char *fmt =
       "%s_list *%s_list_mapi_%s(%s_list *lst, %s (*f)(unsigned int, const %s*)) {\n"
       "  if (!lst) { return 0; }\n"
@@ -339,7 +377,7 @@ int _write_mapi_def(FILE *f, int ac, char *av[]) {
       "  %s_value *_first = lst->first;\n"
       "  unsigned int i = 0;\n"
       "  for (; _first; _first = _first->next) {\n"
-      "    append(_new, f(i, &_first->value));\n"
+      "    append(_new, f(i, (const %s*)&_first->value));\n"
       "    i += 1;\n"
       "  }\n"
       "  _new->len = lst->len;\n"
@@ -349,87 +387,87 @@ int _write_mapi_def(FILE *f, int ac, char *av[]) {
   int err = 0;
   for (int i = 0; i != ac; i +=1) {
     for (int j = 0; j != ac; j += 1) {
-      err |= fprintf(f, fmt, av[j], av[i], av[j], av[i], av[j], av[i],
-                     av[j], av[j],
-                     av[i], av[j],
-                     av[j]);
+      err |= fprintf(f, fmt,
+                     sts[j].alias, sts[i].alias, sts[j].alias, sts[i].alias, sts[j].ty, sts[i].ty,
+                     sts[j].alias, sts[j].alias,
+                     sts[i].alias, sts[i].ty);
     }
   }
 
   return err;
 }
 
-int write_mapi(FILE *fh, FILE *fc, int ac, char *av[]) {
-  return _write_mapi_decl(fh, ac, av) | _write_mapi_def(fc, ac, av);
+int write_mapi(FILE *fh, FILE *fc, int ac, split_ty *sts) {
+  return _write_mapi_decl(fh, ac, sts) | _write_mapi_def(fc, ac, sts);
 }
 
-int _write_iter_decl(FILE *f, int ac, char *av[]) {
+int _write_iter_decl(FILE *f, int ac, split_ty *sts) {
   int err = 0;
   err |= fprintf(f, "#define iter(lst, f) _Generic((lst)");
   // write the macro first
   for (int i = 0; i != ac; i += 1) {
-    err |= fprintf(f, ", \\\n  %s_list*: %s_list_iter", av[i], av[i]);
+    err |= fprintf(f, ", \\\n  %s_list*: %s_list_iter", sts[i].alias, sts[i].alias);
   }
   err |= fprintf(f, ")(lst, f)\n\n");
   // then func declarations
   for (int i = 0; i != ac; i += 1) {
     err |= fprintf(f, "void %s_list_iter(%s_list *, void (*)(const %s*));\n",
-                   av[i], av[i], av[i]);
+                   sts[i].alias, sts[i].alias, sts[i].ty);
   }
   err |= fprintf(f, "\n");
 
   return err;
 }
 
-int _write_iter_def(FILE *f, int ac, char *av[]) {
+int _write_iter_def(FILE *f, int ac, split_ty *sts) {
     const char *fmt =
       "void %s_list_iter(%s_list *lst, void (*f)(const %s*)) {\n"
       "  if (lst) {\n"
       "    %s_value *_first = lst->first;\n"
       "    for (; _first; _first = _first->next) {\n"
-      "      f(&_first->value);\n"
+      "      f((const %s*)&_first->value);\n"
       "    }\n"
       "  }\n"
       "}\n\n";
 
   int err = 0;
   for (int i = 0; i != ac; i +=1) {
-    err |= fprintf(f, fmt, av[i], av[i], av[i], av[i]);
+    err |= fprintf(f, fmt, sts[i].alias, sts[i].alias, sts[i].ty, sts[i].alias, sts[i].ty);
   }
 
   return err;
 }
 
-int write_iter(FILE *fh, FILE *fc, int ac, char *av[]) {
-  return _write_iter_decl(fh, ac, av) | _write_iter_def(fc, ac, av);
+int write_iter(FILE *fh, FILE *fc, int ac, split_ty *sts) {
+  return _write_iter_decl(fh, ac, sts) | _write_iter_def(fc, ac, sts);
 }
 
-int _write_iteri_decl(FILE *f, int ac, char *av[]) {
+int _write_iteri_decl(FILE *f, int ac, split_ty *sts) {
   int err = 0;
   err |= fprintf(f, "#define iteri(lst, f) _Generic((lst)");
   // write the macro first
   for (int i = 0; i != ac; i += 1) {
-    err |= fprintf(f, ", \\\n  %s_list*: %s_list_iteri", av[i], av[i]);
+    err |= fprintf(f, ", \\\n  %s_list*: %s_list_iteri", sts[i].alias, sts[i].alias);
   }
   err |= fprintf(f, ")(lst, f)\n\n");
   // then func declarations
   for (int i = 0; i != ac; i += 1) {
     err |= fprintf(f, "void %s_list_iteri(%s_list *, void (*)(unsigned int, const %s*));\n",
-                   av[i], av[i], av[i]);
+                   sts[i].alias, sts[i].alias, sts[i].ty);
   }
   err |= fprintf(f, "\n");
 
   return err;
 }
 
-int _write_iteri_def(FILE *f, int ac, char *av[]) {
+int _write_iteri_def(FILE *f, int ac, split_ty *sts) {
     const char *fmt =
       "void %s_list_iteri(%s_list *lst, void (*f)(unsigned int, const %s*)) {\n"
       "  if (lst) {\n"
       "    %s_value *_first = lst->first;\n"
       "    unsigned int i = 0;\n"
       "    for (; _first; _first = _first->next) {\n"
-      "      f(i, &_first->value);\n"
+      "      f(i, (const %s*)&_first->value);\n"
       "      i += 1;\n"
       "    }\n"
       "  }\n"
@@ -437,42 +475,42 @@ int _write_iteri_def(FILE *f, int ac, char *av[]) {
 
   int err = 0;
   for (int i = 0; i != ac; i +=1) {
-    err |= fprintf(f, fmt, av[i], av[i], av[i], av[i]);
+    err |= fprintf(f, fmt, sts[i].alias, sts[i].alias, sts[i].ty, sts[i].alias, sts[i].ty);
   }
 
   return err;
 }
 
-int write_iteri(FILE *fh, FILE *fc, int ac, char *av[]) {
-  return _write_iteri_decl(fh, ac, av) | _write_iteri_def(fc, ac, av);
+int write_iteri(FILE *fh, FILE *fc, int ac, split_ty *sts) {
+  return _write_iteri_decl(fh, ac, sts) | _write_iteri_def(fc, ac, sts);
 }
 
-int _write_any_decl(FILE *f, int ac, char *av[]) {
+int _write_any_decl(FILE *f, int ac, split_ty *sts) {
   int err = 0;
   err |= fprintf(f, "#define any(lst, f) _Generic((lst)");
   // write the macro first
   for (int i = 0; i != ac; i += 1) {
-    err |= fprintf(f, ", \\\n  %s_list*: %s_list_any", av[i], av[i]);
+    err |= fprintf(f, ", \\\n  %s_list*: %s_list_any", sts[i].alias, sts[i].alias);
   }
   err |= fprintf(f, ")(lst, f)\n\n");
   // then func declarations
   for (int i = 0; i != ac; i += 1) {
     err |= fprintf(f, "bool %s_list_any(%s_list *, bool (*)(const %s*));\n",
-                   av[i], av[i], av[i]);
+                   sts[i].alias, sts[i].alias, sts[i].ty);
   }
   err |= fprintf(f, "\n");
 
   return err;
 }
 
-int _write_any_def(FILE *f, int ac, char *av[]) {
+int _write_any_def(FILE *f, int ac, split_ty *sts) {
     const char *fmt =
       "bool %s_list_any(%s_list *lst, bool (*f)(const %s*)) {\n"
       "  if (lst) {\n"
       "    %s_value *_first = lst->first;\n"
       "    bool r = false;\n"
       "    for (; _first; _first = _first->next) {\n"
-      "      r |= f(&_first->value);\n"
+      "      r |= f((const %s*)&_first->value);\n"
       "    }\n"
       "    return r;\n"
       "  }\n"
@@ -481,42 +519,42 @@ int _write_any_def(FILE *f, int ac, char *av[]) {
 
   int err = 0;
   for (int i = 0; i != ac; i +=1) {
-    err |= fprintf(f, fmt, av[i], av[i], av[i], av[i]);
+    err |= fprintf(f, fmt, sts[i].alias, sts[i].alias, sts[i].ty, sts[i].alias, sts[i].ty);
   }
 
   return err;
 }
 
-int write_any(FILE *fh, FILE *fc, int ac, char *av[]) {
-  return _write_any_decl(fh, ac, av) | _write_any_def(fc, ac, av);
+int write_any(FILE *fh, FILE *fc, int ac, split_ty *sts) {
+  return _write_any_decl(fh, ac, sts) | _write_any_def(fc, ac, sts);
 }
 
-int _write_all_decl(FILE *f, int ac, char *av[]) {
+int _write_all_decl(FILE *f, int ac, split_ty *sts) {
   int err = 0;
   err |= fprintf(f, "#define all(lst, f) _Generic((lst)");
   // write the macro first
   for (int i = 0; i != ac; i += 1) {
-    err |= fprintf(f, ", \\\n  %s_list*: %s_list_all", av[i], av[i]);
+    err |= fprintf(f, ", \\\n  %s_list*: %s_list_all", sts[i].alias, sts[i].alias);
   }
   err |= fprintf(f, ")(lst, f)\n\n");
   // then func declarations
   for (int i = 0; i != ac; i += 1) {
     err |= fprintf(f, "bool %s_list_all(%s_list *, bool (*)(const %s*));\n",
-                   av[i], av[i], av[i]);
+                   sts[i].alias, sts[i].alias, sts[i].ty);
   }
   err |= fprintf(f, "\n");
 
   return err;
 }
 
-int _write_all_def(FILE *f, int ac, char *av[]) {
+int _write_all_def(FILE *f, int ac, split_ty *sts) {
     const char *fmt =
       "bool %s_list_all(%s_list *lst, bool (*f)(const %s*)) {\n"
       "  if (lst) {\n"
       "    %s_value *_first = lst->first;\n"
       "    bool r = true;\n"
       "    for (; _first; _first = _first->next) {\n"
-      "      r &= f(&_first->value);\n"
+      "      r &= f((const %s*)&_first->value);\n"
       "    }\n"
       "    return r;\n"
       "  }\n"
@@ -525,34 +563,35 @@ int _write_all_def(FILE *f, int ac, char *av[]) {
 
   int err = 0;
   for (int i = 0; i != ac; i +=1) {
-    err |= fprintf(f, fmt, av[i], av[i], av[i], av[i]);
+    err |= fprintf(f, fmt, sts[i].alias, sts[i].alias, sts[i].ty, sts[i].alias, sts[i].ty);
   }
 
   return err;
 }
 
-int write_all(FILE *fh, FILE *fc, int ac, char *av[]) {
-  return _write_all_decl(fh, ac, av) | _write_all_def(fc, ac, av);
+int write_all(FILE *fh, FILE *fc, int ac, split_ty *sts) {
+  return _write_all_decl(fh, ac, sts) | _write_all_def(fc, ac, sts);
 }
 
-int _write_rev_decl(FILE *f, int ac, char *av[]) {
+int _write_rev_decl(FILE *f, int ac, split_ty *sts) {
   int err = 0;
   err |= fprintf(f, "#define rev(lst) _Generic((lst)");
   // write the macro first
   for (int i = 0; i != ac; i += 1) {
-    err |= fprintf(f, ", \\\n  %s_list*: %s_list_rev", av[i], av[i]);
+    err |= fprintf(f, ", \\\n  %s_list*: %s_list_rev", sts[i].alias, sts[i].alias);
   }
   err |= fprintf(f, ")(lst)\n\n");
   // then func declarations
   for (int i = 0; i != ac; i += 1) {
-    err |= fprintf(f, "%s_list *%s_list_rev(%s_list *);\n", av[i], av[i], av[i]);
+    err |= fprintf(f, "%s_list *%s_list_rev(%s_list *);\n",
+                   sts[i].alias, sts[i].alias, sts[i].alias);
   }
   err |= fprintf(f, "\n");
 
   return err;
 }
 
-int _write_rev_def(FILE *f, int ac, char *av[]) {
+int _write_rev_def(FILE *f, int ac, split_ty *sts) {
     const char *fmt =
       "%s_list *%s_list_rev(%s_list *lst) {\n"
       "  if (!lst) { return 0; }\n"
@@ -577,42 +616,45 @@ int _write_rev_def(FILE *f, int ac, char *av[]) {
 
   int err = 0;
   for (int i = 0; i != ac; i +=1) {
-    err |= fprintf(f, fmt, av[i], av[i], av[i], av[i], av[i], av[i], av[i]);
+    err |= fprintf(f, fmt, sts[i].alias, sts[i].alias, sts[i].alias,
+                   sts[i].alias, sts[i].alias,
+                   sts[i].alias,
+                   sts[i].alias);
   }
 
   return err;
 }
 
-int write_rev(FILE *fh, FILE *fc, int ac, char *av[]) {
-  return _write_rev_decl(fh, ac, av) | _write_rev_def(fc, ac, av);
+int write_rev(FILE *fh, FILE *fc, int ac, split_ty *sts) {
+  return _write_rev_decl(fh, ac, sts) | _write_rev_def(fc, ac, sts);
 }
 
-int _write_find_decl(FILE *f, int ac, char *av[]) {
+int _write_find_decl(FILE *f, int ac, split_ty *sts) {
   int err = 0;
   err |= fprintf(f, "#define find(lst, f) _Generic((lst)");
   // write the macro first
   for (int i = 0; i != ac; i += 1) {
-    err |= fprintf(f, ", \\\n  %s_list*: %s_list_find", av[i], av[i]);
+    err |= fprintf(f, ", \\\n  %s_list*: %s_list_find", sts[i].alias, sts[i].alias);
   }
   err |= fprintf(f, ")(lst, f)\n\n");
   // then func declarations
   for (int i = 0; i != ac; i += 1) {
     err |= fprintf(f, "const %s *%s_list_find(%s_list *, bool (*)(const %s*));\n",
-                   av[i], av[i], av[i], av[i]);
+                   sts[i].ty, sts[i].alias, sts[i].alias, sts[i].ty);
   }
   err |= fprintf(f, "\n");
 
   return err;
 }
 
-int _write_find_def(FILE *f, int ac, char *av[]) {
+int _write_find_def(FILE *f, int ac, split_ty *sts) {
     const char *fmt =
       "const %s *%s_list_find(%s_list *lst, bool (*f)(const %s*)) {\n"
       "  if (lst) {\n"
       "    %s_value *_first = lst->first;\n"
       "    for (; _first; _first = _first->next) {\n"
-      "      if (f(&_first->value)) {\n"
-      "        return &_first->value;\n"
+      "      if (f((const %s*)&_first->value)) {\n"
+      "        return (const %s*)&_first->value;\n"
       "      }\n"
       "    }\n"
       "  }\n"
@@ -621,35 +663,38 @@ int _write_find_def(FILE *f, int ac, char *av[]) {
 
   int err = 0;
   for (int i = 0; i != ac; i +=1) {
-    err |= fprintf(f, fmt, av[i], av[i], av[i], av[i], av[i]);
+    err |= fprintf(f, fmt, sts[i].ty, sts[i].alias, sts[i].alias, sts[i].ty,
+                   sts[i].alias,
+                   sts[i].ty,
+                   sts[i].ty);
   }
 
   return err;
 }
 
-int write_find(FILE *fh, FILE *fc, int ac, char *av[]) {
-  return _write_find_decl(fh, ac, av) | _write_find_def(fc, ac, av);
+int write_find(FILE *fh, FILE *fc, int ac, split_ty *sts) {
+  return _write_find_decl(fh, ac, sts) | _write_find_def(fc, ac, sts);
 }
 
-int _write_filter_decl(FILE *f, int ac, char *av[]) {
+int _write_filter_decl(FILE *f, int ac, split_ty *sts) {
   int err = 0;
   err |= fprintf(f, "#define filter(lst) _Generic((lst)");
   // write the macro first
   for (int i = 0; i != ac; i += 1) {
-    err |= fprintf(f, ", \\\n  %s_list*: %s_list_filter", av[i], av[i]);
+    err |= fprintf(f, ", \\\n  %s_list*: %s_list_filter", sts[i].alias, sts[i].alias);
   }
   err |= fprintf(f, ")(lst)\n\n");
   // then func declarations
   for (int i = 0; i != ac; i += 1) {
     err |= fprintf(f, "%s_list *%s_list_filter(%s_list *, bool (*)(const %s*));\n",
-                   av[i], av[i], av[i], av[i]);
+                   sts[i].alias, sts[i].alias, sts[i].alias, sts[i].ty);
   }
   err |= fprintf(f, "\n");
 
   return err;
 }
 
-int _write_filter_def(FILE *f, int ac, char *av[]) {
+int _write_filter_def(FILE *f, int ac, split_ty *sts) {
     const char *fmt =
       "%s_list *%s_list_filter(%s_list *lst, bool (*f)(const %s*)) {\n"
       "  if (!lst) { return 0; }\n"
@@ -657,7 +702,7 @@ int _write_filter_def(FILE *f, int ac, char *av[]) {
       "  if (!_new) { return 0; }\n"
       "  %s_value *_first = lst->first;\n"
       "  for (; _first; _first = _first->next) {\n"
-      "    if (f(&_first->value) == true) {\n"
+      "    if (f((const %s*)&_first->value) == true) {\n"
       "      append(_new, _first->value);\n"
       "    }\n"
       "  }\n"
@@ -667,14 +712,17 @@ int _write_filter_def(FILE *f, int ac, char *av[]) {
 
   int err = 0;
   for (int i = 0; i != ac; i +=1) {
-    err |= fprintf(f, fmt, av[i], av[i], av[i], av[i], av[i], av[i], av[i]);
+    err |= fprintf(f, fmt, sts[i].alias, sts[i].alias, sts[i].alias, sts[i].ty,
+                   sts[i].alias, sts[i].alias,
+                   sts[i].alias,
+                   sts[i].ty);
   }
 
   return err;
 }
 
-int write_filter(FILE *fh, FILE *fc, int ac, char *av[]) {
-  return _write_filter_decl(fh, ac, av) | _write_filter_def(fc, ac, av);
+int write_filter(FILE *fh, FILE *fc, int ac, split_ty *sts) {
+  return _write_filter_decl(fh, ac, sts) | _write_filter_def(fc, ac, sts);
 }
 
 int write_includes(FILE *fh, FILE *fc, parsed_opts *opts) {
@@ -712,28 +760,42 @@ int do_stuff(parsed_opts *opts) {
     return 1;
   }
 
+  // make split_ty
+  split_ty sts[ac];
+  for (int i = 0; i != ac; i +=1) {
+    sts[i] = split_ty_make(av[i]);
+  }
+
   fprintf(fh, "/* this is a generated file, do not edit. */\n\n");
   fprintf(fc, "/* this is a generated file, do not edit. */\n\n");
 
   // include guards
   fprintf(fh, "#ifndef KIWI_H\n#define KIWI_H\n\n");
   write_includes(fh, fc, opts);
-  write_structs_decl(fh, fc, ac, av);
-  write_make(fh, fc, ac, av);
-  write_drop(fh, fc, ac, av);
-  write_append(fh, fc, ac, av);
-  write_copy(fh, fc, ac, av);
-  write_map(fh, fc, ac, av);
-  write_mapi(fh, fc, ac, av);
-  write_iter(fh, fc, ac, av);
-  write_iteri(fh, fc, ac, av);
-  write_any(fh, fc, ac, av);
-  write_all(fh, fc, ac, av);
-  write_rev(fh, fc, ac, av);
-  write_find(fh, fc, ac, av);
-  write_filter(fh, fc, ac, av);
+  write_structs_decl(fh, fc, ac, sts);
+  write_make(fh, fc, ac, sts);
+  write_drop(fh, fc, ac, sts);
+  write_append(fh, fc, ac, sts);
+  write_copy(fh, fc, ac, sts);
+  write_map(fh, fc, ac, sts);
+  write_mapi(fh, fc, ac, sts);
+  write_iter(fh, fc, ac, sts);
+  write_iteri(fh, fc, ac, sts);
+  write_any(fh, fc, ac, sts);
+  write_all(fh, fc, ac, sts);
+  write_rev(fh, fc, ac, sts);
+  write_find(fh, fc, ac, sts);
+  write_filter(fh, fc, ac, sts);
   // endif include guards
   fprintf(fh, "#endif // KIWI_H\n");
+
+  // remove change from split_ty
+  for (int i = 0; i != ac; i +=1) {
+    split_ty_reset(sts[i]);
+  }
+
+  fclose(fh);
+  fclose(fc);
 
   return 0;
 }
