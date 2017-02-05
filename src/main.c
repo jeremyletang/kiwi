@@ -835,7 +835,7 @@ int check_opts(parsed_opts *opts) {
     goto exit;
   }
   if (!has_all_required_opt(opts)) {
-    err = -1;
+    err = 1;
   }
   if (str_array_len((const char**)opts->files) == 0) {
     printf("error: no input types\n");
