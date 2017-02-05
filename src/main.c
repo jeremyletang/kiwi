@@ -10,7 +10,6 @@
 #include <string.h>
 #include <stdlib.h>
 
-const char *out = "./kiwi/";
 const char *hout = "kiwi.h";
 const char *cout = "kiwi.c";
 
@@ -42,12 +41,14 @@ const opt *has_opt(parsed_opts *opts, char *str);
 void parsed_opts_free(parsed_opts *p);
 unsigned int str_array_len(const char **arr);
 parsed_opts *parse_opts(int args, char *argv[]);
+bool has_all_required_opt(parsed_opts *op);
 
-FILE *_open(const char *name) {
+FILE *_open(const char *out, const char *name) {
   FILE *f = 0;
   char path[256];
   memset(path, 0, 256);
   strcat(path, out);
+  strcat(path, "/");
   strcat(path, name);
   if ((f = fopen(path, "w")) == 0) {
     printf("error: unable to open '%s'\n", path);
@@ -690,7 +691,9 @@ int write_includes(FILE *fh, FILE *fc, parsed_opts *opts) {
     fprintf(fh, "\n// user defined types headers\n");
     opt_list *o = opts->opts;
     for (; o; o = o->next) {
-      err |= fprintf(fh, "#include <%s>\n", o->opt->arg);
+      if (strcmp(o->opt->name, "-I") == 0) {
+        err |= fprintf(fh, "#include <%s>\n", o->opt->arg);
+      }
     }
   }
   fprintf(fh, "\n");
@@ -703,8 +706,9 @@ int do_stuff(parsed_opts *opts) {
   FILE *fc = 0;
   int ac = str_array_len((const char **)opts->files);
   char **av = opts->files;
+  const opt *opt = has_opt(opts, "--out");
 
-  if ((fh = _open(hout)) == 0 || (fc = _open(cout)) == 0) {
+  if ((fh = _open(opt->arg, hout)) == 0 || (fc = _open(opt->arg, cout)) == 0) {
     return 1;
   }
 
@@ -740,6 +744,9 @@ int check_opts(parsed_opts *opts) {
     print_help();
     err = 0;
     goto exit;
+  }
+  if (!has_all_required_opt(opts)) {
+    err = -1;
   }
   if (str_array_len((const char**)opts->files) == 0) {
     printf("error: no input types\n");
@@ -801,13 +808,19 @@ opt_list *opt_list_make();
 opt_list *opt_list_append(opt_list *lst, opt *o);
 void opt_list_free(opt_list*);
 
-#define OPTS_SIZE 2
+#define OPTS_SIZE 3
 
 static const opt_def opts[OPTS_SIZE] = {
   {
     .name = "-I",
-    .summary = "Files to include in order to define list types",
+    .summary = "Add file to generate includes",
     .optional = true,
+    .has_param = true,
+  },
+  {
+    .name = "--out",
+    .summary = "Output folder for kiwi generated files",
+    .optional = false,
     .has_param = true,
   },
   {
@@ -932,6 +945,18 @@ const opt *has_opt(parsed_opts *opts, char *str) {
     }
   }
   return 0;
+}
+
+bool has_all_required_opt(parsed_opts *op) {
+  for (int i = 0; i < OPTS_SIZE; i += 1) {
+    if (opts[i].optional == false) {
+      if (has_opt(op, opts[i].name) == 0) {
+        printf("error: missing required argument '%s'\n", opts[i].name);
+        return false;
+      }
+    }
+  }
+  return true;
 }
 
 void parsed_opts_free(parsed_opts *p) {
