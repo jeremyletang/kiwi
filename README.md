@@ -22,19 +22,19 @@ Executing this command will generate list definitions for `int, char *, toto_t`,
 
 # features
 Here is a list of functions generate with each lists types:
-* make
-* drop
-* append
-* copy
-* map
-* mapi
-* iter
-* iteri
-* filter
-* any
-* all
-* rev
-* find
+* make: create a new list
+* drop: delete a list
+* append: add a new element to the list
+* copy: copy an existing list
+* map: apply a function to all the element of a list, and build a new element with list
+* mapi: same than map but pass the index of the element in the list to the function
+* iter: apply a function to all the element of the list
+* iteri: same than iter but pass the index of the element in the list to the function
+* filter: return all the elements of the list that statisfy the predicate
+* any: return true if any of element of the list satisfy the predicate
+* all: return true if all the element of the list satisfy the predicate
+* rev: return the reversed list
+* find: return a pointer to a specific element in the list
 
 Kiwi use the '_Generic' macro from C11 extensively, so it allows you to use the same API for any types, it means that you do not have to call verbose API like `int_list_map_float`, without losing typeness by using `void*` to a single function.
 
