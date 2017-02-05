@@ -749,12 +749,39 @@ int write_includes(FILE *fh, FILE *fc, parsed_opts *opts) {
   return err;
 }
 
+int check_types(int ac, char *av[]) {
+  int err = 0;
+  for (int i = 0; i != ac; i += 1) {
+    const char *p = av[i];
+    if ((p = strchr(av[i], ':')) != 0) {
+      // we found :, now check position
+      if (p - av[i] == 0) {
+        // : is in first position, so alias is empty string
+        printf("error: invalid type '%s', empty type alias\n", av[i]);
+        err |= 1;
+      } else if ((p - av[i]) == (long)strlen(av[i]) - 1) {
+        // : is at last position, type is empty
+        printf("error: invalid type '%s', empty type\n", av[i]);
+        err |= 1;
+      }
+    }
+  }
+
+  return err;
+}
+
 int do_stuff(parsed_opts *opts) {
   FILE *fh = 0;
   FILE *fc = 0;
   int ac = str_array_len((const char **)opts->files);
   char **av = opts->files;
   const opt *opt = has_opt(opts, "--out");
+
+  // first check if all types are valids
+  int err = 0;
+  if ((err = check_types(ac, av)) != 0) {
+    return err;
+  }
 
   if ((fh = _open(opt->arg, hout)) == 0 || (fc = _open(opt->arg, cout)) == 0) {
     return 1;
@@ -827,7 +854,7 @@ int main(int ac, char *av[]) {
   }
   err = do_stuff(opts);
   parsed_opts_free(opts);
-  return 0;
+  return err;
 }
 
 unsigned int str_array_len(const char **arr) {
