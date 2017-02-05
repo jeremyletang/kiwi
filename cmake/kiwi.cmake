@@ -14,7 +14,7 @@ set (KIWI_DIR kiwi)
 set (KIWI_PATH ${CMAKE_BINARY_DIR}/${KIWI_DIR})
 
 ExternalProject_Add(
-  deps.kiwi
+  kiwi
   PREFIX ${KIWI_PATH}
   GIT_REPOSITORY https://github.com/jeremyletang/kiwi.git
   TIMEOUT 10
@@ -29,7 +29,7 @@ ExternalProject_Add(
   LOG_BUILD ON
   )
 
-ExternalProject_Get_Property(deps.kiwi SOURCE_DIR)
+ExternalProject_Get_Property(kiwi SOURCE_DIR)
 set (KIWI_CMD "${SOURCE_DIR}/bin/kiwi")
 
 macro(kiwi_build out)
